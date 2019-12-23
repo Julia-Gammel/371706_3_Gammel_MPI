@@ -5,13 +5,11 @@
 #include <stdio.h>
 #include <vector>
 #include <iostream>
-#include <cstddef>
-#include <float.h>
 using namespace std;
 
 int ProcNum = 0, ProcRank = 0;
-int* pReceiveNum;  // Количество элементов, посылаемых процессом
-int* pReceiveInd;  // Индекс элемента данных в результирующем векторе
+int* pReceiveNum;  //Количество элементов, посылаемых процессом
+int* pReceiveInd;  //Индекс элемента данных
 
 struct crsMatrix
 {
@@ -63,7 +61,7 @@ void GenerateRegularCRS(int n, int cntInRow, crsMatrix* mtx)
 	}
 	// Заполняем массив значений 
 	for (i = 0; i < cntInRow * n; i++)
-		mtx[0].Value[i] = rand() % 99 + 1; // Чтобы не было нулевых значений
+		mtx[0].Value[i] = rand() % 10 + 1; // Чтобы не было нулевых значений
 	// Заполняем массив индексов строк 
 	c = 0;
 	for (i = 0; i <= n; i++)
@@ -75,23 +73,37 @@ void GenerateRegularCRS(int n, int cntInRow, crsMatrix* mtx)
 
 void Print(int n, crsMatrix* mtx)
 {
-	printf("Matrix in format CRS: \n");
+	cout << "Matrix in format CRS: " << endl;
 	int k, i;
 	k = mtx[0].NZ;
-	printf("\n Value: ");
+	cout << endl << " Values: ";
 	for (i = 0; i < k; i++) {
-		printf(" %.1f", mtx[0].Value[i]);
+		cout << " " << mtx[0].Value[i];
 	}
-	printf("\n Col: ");
+	cout << endl << " Columns: ";
 	for (i = 0; i < k; i++) {
-		printf(" %d", mtx[0].Col[i]);
+		cout << " " << mtx[0].Col[i];
 	}
-	printf("\n RowIndex: ");
+	cout << endl << " RowIndex: ";
 	for (i = 0; i < n + 1; i++) {
-		printf(" %d", mtx[0].RowIndex[i]);
+		cout << " " << mtx[0].RowIndex[i];
 	}
 	printf("\n");
-	fflush(stdout);
+}
+
+void PrintEasy(int n, crsMatrix* mtx)
+{
+	int k, i;
+	k = mtx[0].NZ;
+	cout << endl << " Values: ";
+	for (i = 0; i < k; i++) {
+		cout << " " << mtx[0].Value[i];
+	}
+	cout << endl << " Columns: ";
+	for (i = 0; i < k; i++) {
+		cout << " " << mtx[0].Col[i];
+	}
+	printf("\n");
 }
 
 // Транспонируем матрицу алгоритмом Густавсона для дальнейшего перемножения матриц
@@ -131,13 +143,14 @@ crsMatrix Transpose(int N, int NZ, int cntInRow, crsMatrix* A)
 
 void Multiplicate(crsMatrix A, crsMatrix B, crsMatrix& C)
 {
-	int N = A.N;
+	int N = A.N; int N2 = B.N;
+	double sum;
 	vector<int> columns; vector<double> values; vector<int> row_index;
 	int rowNZ; row_index.push_back(0);
 	for (int i = 0; i < N; i++) {
 		rowNZ = 0;
-		for (int j = 0; j < N; j++) {
-			double sum = 0;
+		for (int j = 0; j < N2; j++) {
+			sum = 0.0;
 			// Считаем скалярное произведение строк А и BT
 			for (int k = A.RowIndex[i]; k < A.RowIndex[i + 1]; k++)
 				for (int l = B.RowIndex[j]; l < B.RowIndex[j + 1]; l++)
@@ -160,14 +173,10 @@ void Multiplicate(crsMatrix A, crsMatrix B, crsMatrix& C)
 		C.Value[j] = values[j];
 	}
 	for (int i = 0; i <= N; i++) C.RowIndex[i] = row_index[i];
-	//printf("\nResult of multiplication: \n");
 	//Print(N, &C);
-
-	//return columns.size();
 }
 
-// Для какого процесса какую часть матрицы
-void DataDistribution(int N, crsMatrix mtx1, crsMatrix* mtx2, int cntInRow)
+void DataDistribution(int N, crsMatrix mtx1, crsMatrix* mtx2, int cntInRow) //какому процессу какой кусок матрицы
 {
 	int* pSendNum;    	// Количество элементов, посылаемых процессу
 	int* pSendInd;    	// Индекс первого элемента данных, посылаемого процессу
@@ -185,13 +194,24 @@ void DataDistribution(int N, crsMatrix mtx1, crsMatrix* mtx2, int cntInRow)
 		pSendInd[i] = pSendInd[i - 1] + pSendNum[i - 1];
 	}
 
-	// Рассылка массива Val (значений матрицы)
 	MPI_Scatterv(mtx1.Value, pSendNum, pSendInd, MPI_DOUBLE, mtx2[0].Value, pSendNum[ProcRank], MPI_DOUBLE, 0, MPI_COMM_WORLD);
-	// Рассылка массива Col (столбцов матрицы)
+	
 	MPI_Scatterv(mtx1.Col, pSendNum, pSendInd, MPI_INT, mtx2[0].Col, pSendNum[ProcRank], MPI_INT, 0, MPI_COMM_WORLD);
-
+	
+	MPI_Scatterv(mtx1.RowIndex, pSendNum, pSendInd, MPI_INT, mtx2[0].RowIndex, pSendNum[ProcRank], MPI_INT, 0, MPI_COMM_WORLD);
 }
 
+bool CompareClsMatrix(crsMatrix mtx1, crsMatrix mtx2)
+{
+	for (int i = 0; i < mtx2.NZ; i++)
+	{
+		if ((mtx1.Col[i] != mtx2.Col[i])|| (mtx1.Value[i] != mtx2.Value[i]) || (mtx1.RowIndex[i] != mtx2.RowIndex[i])) {
+			return false;
+		}
+		i++;
+	}
+	return true;
+}
 
 void RowIndexProc(int N, crsMatrix* mtx, int cntInRow)
 {
@@ -204,23 +224,15 @@ void RowIndexProc(int N, crsMatrix* mtx, int cntInRow)
 int main(int argc, char* argv[])
 {
 	srand(time(NULL));
-	 int N = 2000;
-	//N = atoi(argv[1]);
-	//количество элементов в строке, для равномерной нагрузки на процессы
-	int cntInRow = 2;	//atoi(argv[2]);
+	int N = 2000; int cntInRow = 1;
 	int NZ = cntInRow * N;
 	int i;
-	crsMatrix mtx;
-	crsMatrix mtx2;
-	crsMatrix mtx_tmp, mtx_tmp2;
+	crsMatrix mtx, mtx2;
+	crsMatrix mtx_tmp;
 	crsMatrix Answer;
 	InitializeMatrix(N, N, &Answer);
 	double startwtime, endwtime, dur_paral, dur_consequen;
 	int RestRows = N;
-	//int* pSendNum;    	// Количество элементов, посылаемых процессу
-	//int* pSendInd;    	// Индекс первого элемента данных, посылаемого процессу*/
-	//pSendNum = new int[ProcNum];	pSendInd = new int[ProcNum];
-
 	MPI_Init(&argc, &argv);
 	MPI_Comm_size(MPI_COMM_WORLD, &ProcNum);
 	MPI_Comm_rank(MPI_COMM_WORLD, &ProcRank);
@@ -234,31 +246,37 @@ int main(int argc, char* argv[])
 		pReceiveNum[i] = RestRows / (ProcNum - i);
 		pReceiveInd[i] = pReceiveInd[i - 1] + pReceiveNum[i - 1];
 	}
+
 	InitializeMatrix(N, NZ, &mtx);	
 	InitializeMatrix(N, NZ, &mtx2);
+
 	if (ProcRank == 0)
 	{
 		GenerateRegularCRS(N, cntInRow, &mtx);
 		GenerateRegularCRS(N, cntInRow, &mtx2);
 		Print(N, &mtx);
+		cout << endl << "Second matrix before transposing: " << endl;
 		Print(N, &mtx2);
-		MPI_Datatype StructType;
+		mtx2 = Transpose(N, NZ, cntInRow, &mtx2);
+		cout << endl << "Matrix after transposing: " << endl;
+		Print(N, &mtx2);
+		cout << endl;
 	}
 	startwtime = MPI_Wtime();
 	MPI_Bcast(&N, 1, MPI_INT, 0, MPI_COMM_WORLD);
 	MPI_Bcast(&cntInRow, 1, MPI_INT, 0, MPI_COMM_WORLD);
-	//fflush(stdout);
-
+	//MPI_Bcast(&NZ, 1, MPI_INT, 0, MPI_COMM_WORLD); MPI_Bcast(mtx.RowIndex, N + 1, MPI_INT, 0, MPI_COMM_WORLD); MPI_Bcast(mtx.Value, NZ, MPI_DOUBLE, 0, MPI_COMM_WORLD);  MPI_Bcast(mtx.Col, NZ, MPI_INT, 0, MPI_COMM_WORLD);
+	MPI_Bcast(mtx2.RowIndex, N + 1, MPI_INT, 0, MPI_COMM_WORLD);
+	MPI_Bcast(mtx2.Value, NZ, MPI_DOUBLE, 0, MPI_COMM_WORLD);
+	MPI_Bcast(mtx2.Col, NZ, MPI_INT, 0, MPI_COMM_WORLD);
 	InitializeMatrix(pReceiveNum[ProcRank], pReceiveNum[ProcRank] * cntInRow, &mtx_tmp);
 	DataDistribution(N, mtx, &mtx_tmp, cntInRow);
-	InitializeMatrix(pReceiveNum[ProcRank], pReceiveNum[ProcRank] * cntInRow, &mtx_tmp2);
-	DataDistribution(N, mtx2, &mtx_tmp2, cntInRow);
+	RowIndexProc(pReceiveNum[ProcRank], &mtx_tmp, cntInRow);	
 
-	RowIndexProc(pReceiveNum[ProcRank], &mtx_tmp, cntInRow);
-	RowIndexProc(pReceiveNum[ProcRank], &mtx_tmp2, cntInRow);
 	crsMatrix result;
-	//int NotNull = 
-	Multiplicate(mtx_tmp, mtx_tmp2, result);
+	InitializeMatrix(N, N, &result);
+	//ParallelMultiplicate(mtx_tmp, mtx2, result, mtx.RowIndex, N, cntInRow);
+	Multiplicate(mtx_tmp, mtx2, result);
 
 	MPI_Gatherv(result.Value, result.N, MPI_DOUBLE, Answer.Value, pReceiveNum, pReceiveInd, MPI_DOUBLE, 0, MPI_COMM_WORLD);
 	MPI_Gatherv(result.Col, result.N, MPI_INT, Answer.Col, pReceiveNum, pReceiveInd, MPI_INT, 0, MPI_COMM_WORLD);
@@ -269,44 +287,27 @@ int main(int argc, char* argv[])
 	if (ProcRank == 0)
 	{
 		cout << "\nResult of multiplication: \n\n";
-		int max = 0;
-		for (i = 0; i < ProcNum; i++) {
-			max += pReceiveNum[i];
-		}
-		printf("Values:\n ");
-		for (i = 0; i < max; i++)
-		{
-			//printf(" %.1f, %d, %d ", Answer.Value[i], Answer.Col[i], Answer.RowIndex[i]);
-			//if ((Answer.Value[i] != NULL) && (Answer.Value[i] > 0) && (Answer.Value[i] < DBL_MAX - 1))
-			printf("%.1f  ", Answer.Value[i]);
-		}
-		printf("\nColumns:\n ");
-		for (i = 0; i < max; i++)
-		{
-			printf("%d  ", Answer.Col[i]);
-		}
-		printf("\nRowIndex:\n ");
-		int S = 0;
-		int tmp;
-		//Answer.RowIndex[0] = 0;
-		for (i = 0; i < max; i++)
-		{
-			tmp = Answer.RowIndex[i];
-			Answer.RowIndex[i] = S;
-			S = S + tmp;
-			printf("%d  ", Answer.RowIndex[i]);
-		}
+
+		RowIndexProc(N, &Answer, cntInRow);
+		PrintEasy(Answer.N, &Answer);
 		printf("\n\nTime (parallel computing) = %f \n", dur_paral);
-		crsMatrix ToCompare;
-		InitializeMatrix(N, N, &ToCompare);
+
+		crsMatrix ToCompare;		
+		InitializeMatrix(N, NZ, &ToCompare);
 		startwtime = MPI_Wtime();
-		Multiplicate(mtx, mtx2, ToCompare);
+		Multiplicate(mtx, mtx2, ToCompare);	
 		endwtime = MPI_Wtime();
-		//Print(N, &ToCompare);
+		cout << "\nResult of multiplication: \n\n";
+		PrintEasy(N, &ToCompare);
 		dur_consequen = endwtime - startwtime;
 		printf("\nTime (consequent computing) = %f \n\n", dur_consequen);
-		int res;
-		if (dur_consequen >= dur_paral)
+
+		cout << "Checking matrices... ";
+		if (CompareClsMatrix(Answer, ToCompare)) 
+			cout << "Matrices are similar" << endl << endl;
+				else cout << "Matrices are not similar" << endl << endl;
+
+			if (dur_consequen >= dur_paral)
 		{
 			printf("Parallel computing is %f faster\n", dur_consequen - dur_paral);
 			printf("The difference is %f times\n", dur_consequen / dur_paral);
